@@ -3,21 +3,56 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
+<meta name="theme-color" content="#111418" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="ぐるぐる救出隊" />
 <title>ぐるぐる救出隊</title>
 <link rel="icon" href="data:," />
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
-  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #111418; }
-  body { display: grid; place-items: center; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #111418; overscroll-behavior: none; }
+  body {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    display: grid;
+    place-items: center;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
   #shell {
     position: relative;
     width: min(100vw, 430px, calc(100vh * 390 / 844));
+    width: min(100vw, 430px, calc(100dvh * 390 / 844));
     aspect-ratio: 390 / 844;
     max-height: 100vh;
+    max-height: 100dvh;
     background: #222;
     box-shadow: 0 0 60px rgba(0,0,0,.72);
     overflow: hidden;
+  }
+  #shell:fullscreen, #shell:-webkit-full-screen {
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    max-width: none;
+    max-height: none;
+    aspect-ratio: auto;
+    display: grid;
+    place-items: center;
+    background: #111418;
+    box-shadow: none;
+  }
+  #shell:fullscreen canvas, #shell:-webkit-full-screen canvas {
+    width: min(100vw, calc(100vh * 390 / 844));
+    width: min(100vw, calc(100dvh * 390 / 844));
+    height: min(100vh, calc(100vw * 844 / 390));
+    height: min(100dvh, calc(100vw * 844 / 390));
   }
   canvas {
     display: block;
@@ -218,7 +253,12 @@ class Game {
     this.resetWorld(); this.state=GameState.PLAYING; this.wave.startNext();
   }
   bind(){
-    addEventListener('resize',()=>this.resize(),{passive:true});
+    const resize=()=>requestAnimationFrame(()=>this.resize());
+    addEventListener('resize',resize,{passive:true});
+    addEventListener('orientationchange',resize,{passive:true});
+    document.addEventListener('fullscreenchange',resize);
+    document.addEventListener('webkitfullscreenchange',resize);
+    if(window.visualViewport) window.visualViewport.addEventListener('resize',resize,{passive:true});
     this.canvas.addEventListener('pointerdown',e=>this.onPointerDown(e));
     this.canvas.addEventListener('pointermove',e=>this.onPointerMove(e));
     this.canvas.addEventListener('pointerup',e=>this.onPointerUp(e));
@@ -232,16 +272,32 @@ class Game {
   }
   toLogical(e){ const r=this.canvas.getBoundingClientRect(); return {x:(e.clientX-r.left)*W/r.width,y:(e.clientY-r.top)*H/r.height}; }
   hitRect(p,x,y,w,h){ return p.x>=x&&p.x<=x+w&&p.y>=y&&p.y<=y+h; }
+  isStandalone(){ return window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone===true; }
+  enterFullscreen(){
+    if(this.isStandalone() || document.fullscreenElement || document.webkitFullscreenElement) return;
+    const shell=document.getElementById('shell');
+    const request=shell.requestFullscreen || shell.webkitRequestFullscreen;
+    if(!request){
+      this.message('共有 →「ホーム画面に追加」で完全全画面',3.6);
+      return;
+    }
+    try{
+      const result=request.call(shell);
+      if(result&&typeof result.catch==='function') result.catch(()=>this.message('共有 →「ホーム画面に追加」でも全画面にできます',3.6));
+    }catch{
+      this.message('共有 →「ホーム画面に追加」でも全画面にできます',3.6);
+    }
+  }
   onPointerDown(e){
     e.preventDefault(); this.sound.unlock(); const p=this.toLogical(e); Object.assign(this.pointer,p,{down:true,id:e.pointerId});
     try{this.canvas.setPointerCapture(e.pointerId);}catch{}
-    if(this.state===GameState.TITLE){ if(this.hitRect(p,82,600,226,66)) this.startGame(); return; }
+    if(this.state===GameState.TITLE){ if(this.hitRect(p,82,600,226,66)){ this.startGame(); this.enterFullscreen(); } return; }
     if(this.state===GameState.ROUTE_CHOICE){
       if(this.hitRect(p,18,290,170,260)) this.chooseRoute(0);
       else if(this.hitRect(p,202,290,170,260)) this.chooseRoute(1);
       return;
     }
-    if(this.state===GameState.VICTORY||this.state===GameState.GAME_OVER){ if(this.hitRect(p,92,588,206,62)) this.startGame(); return; }
+    if(this.state===GameState.VICTORY||this.state===GameState.GAME_OVER){ if(this.hitRect(p,92,588,206,62)){ this.startGame(); this.enterFullscreen(); } return; }
     if(this.state===GameState.PAUSED){ if(this.hitRect(p,105,430,180,58)){this.state=this.prevState||GameState.PLAYING;} return; }
     if(this.hitRect(p,342,18,32,32)){ this.sound.muted=!this.sound.muted; return; }
     if(this.hitRect(p,305,18,32,32)){ this.prevState=this.state; this.state=GameState.PAUSED; return; }
@@ -530,7 +586,7 @@ class Game {
     this.dim(ctx,.58);ctx.textAlign='center';ctx.shadowColor='#4eff8a';ctx.shadowBlur=18;ctx.fillStyle='#f7ffff';ctx.font='1000 38px system-ui';ctx.fillText('ぐるぐる救出隊',195,280);ctx.shadowBlur=0;ctx.fillStyle='#c8d2d8';ctx.font='700 14px system-ui';ctx.fillText('回転武器で外周の敵を迎え撃て',195,316);
     rr(ctx,49,350,292,158,22);ctx.fillStyle='rgba(19,25,30,.9)';ctx.fill();ctx.strokeStyle='rgba(255,255,255,.18)';ctx.lineWidth=2;ctx.stroke();
     const lines=['ドラッグで配置','同じ種類・Lvで合成','7ウェーブ + 最終ボス'];ctx.font='800 16px system-ui';lines.forEach((t,i)=>{ctx.fillStyle=['#75ff9a','#d994ff','#ffd36a'][i];ctx.fillText(t,195,390+i*42);});
-    rr(ctx,82,600,226,66,21);ctx.fillStyle='#31d96b';ctx.fill();ctx.strokeStyle='#b7ffca';ctx.lineWidth=4;ctx.stroke();ctx.fillStyle='#102319';ctx.font='1000 23px system-ui';ctx.fillText('救出開始',195,642);ctx.fillStyle='#dce5e9';ctx.font='700 12px system-ui';ctx.fillText(`HIGH SCORE  ${this.highScore}`,195,700);
+    rr(ctx,82,600,226,66,21);ctx.fillStyle='#31d96b';ctx.fill();ctx.strokeStyle='#b7ffca';ctx.lineWidth=4;ctx.stroke();ctx.fillStyle='#102319';ctx.font='1000 23px system-ui';ctx.fillText('救出開始',195,637);ctx.font='800 10px system-ui';ctx.fillText('タップで全画面',195,654);ctx.fillStyle='#dce5e9';ctx.font='700 12px system-ui';ctx.fillText(`HIGH SCORE  ${this.highScore}`,195,700);
   }
   drawRouteChoice(ctx){
     this.dim(ctx,.76);ctx.textAlign='center';ctx.fillStyle='#fff';ctx.font='1000 27px system-ui';ctx.fillText('強化ルートを選択',195,228);ctx.fillStyle='#c4cdd2';ctx.font='700 12px system-ui';ctx.fillText('選択で後半の戦い方が変わる',195,253);
